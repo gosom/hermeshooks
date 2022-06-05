@@ -29,7 +29,7 @@ func Validate() error {
 
 func ToScheduledJob(p ScheduledJobsPayload) entities.ScheduledJob {
 	ans := entities.ScheduledJob{
-		ID:          uuid.New(),
+		UID:         uuid.New(),
 		Name:        p.Name,
 		Description: p.Description,
 		Url:         p.Url,
@@ -55,13 +55,14 @@ type ScheduledJobsHandler struct {
 
 func (h *ScheduledJobsHandler) Create(w http.ResponseWriter, r bunrouter.Request) error {
 	var p ScheduledJobsPayload
-	if err := Bind(r, p); err != nil {
+	if err := Bind(r, &p); err != nil {
 		return err
 	}
 	job := ToScheduledJob(p)
-	if err := h.srv.Schedule(r.Context(), job); err != nil {
+	job, err := h.srv.Schedule(r.Context(), job)
+	if err != nil {
 		return err
 	}
-	resp := ScheduledJobResponse{job.ID.String()}
+	resp := ScheduledJobResponse{job.UID.String()}
 	return JSON(w, http.StatusCreated, resp)
 }

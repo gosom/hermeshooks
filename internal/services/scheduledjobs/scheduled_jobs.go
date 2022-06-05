@@ -4,29 +4,30 @@ import (
 	"context"
 
 	"github.com/rs/zerolog"
-	"github.com/uptrace/bun"
 
 	"github.com/gosom/hermeshooks/internal/entities"
+	"github.com/gosom/hermeshooks/internal/storage"
 )
 
 type ServiceConfig struct {
 	Log zerolog.Logger
-	DB  *bun.DB
+	DB  *storage.DB
 }
 
 type Service struct {
 	log zerolog.Logger
+	db  *storage.DB
 }
 
 func New(cfg ServiceConfig) *Service {
 	ans := Service{
 		log: cfg.Log,
+		db:  cfg.DB,
 	}
 	return &ans
 }
 
-func (s *Service) Schedule(ctx context.Context, job entities.ScheduledJob) error {
-	// Here we should assing to a partition and save to db
-
-	return nil
+func (s *Service) Schedule(ctx context.Context, job entities.ScheduledJob) (entities.ScheduledJob, error) {
+	_, err := storage.InsertScheduledJob(ctx, s.db, job)
+	return job, err
 }

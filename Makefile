@@ -10,11 +10,19 @@ help: ## help information about make commands
 rest: ## rest starts the webserver
 	go run cmd/server/main.go
 
+.PHONY: worker
+worker: ## worker starts a worker
+	go run cmd/worker/main.go
 
 .PHONY: migrate
 migrate: ## migrate 
 	tern migrate --config migrations/tern.conf --migrations ./migrations
 
+.PHONY: migrate-down
+migrate-down: ## migrate-down 
+	tern migrate --destination -1 --config migrations/tern.conf --migrations ./migrations
+
 .PHONY: migrate-create
 migrate-create: ## migrate-create 
 	tern new $(NAME) -m ./migrations
+
