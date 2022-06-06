@@ -9,25 +9,36 @@ import (
 	"github.com/gosom/hermeshooks/internal/storage"
 )
 
+type Partitioner interface {
+	RLock()
+	Pick() int
+	RUnlock()
+}
+
 type ServiceConfig struct {
-	Log zerolog.Logger
-	DB  *storage.DB
+	Log         zerolog.Logger
+	DB          *storage.DB
+	Partitioner Partitioner
 }
 
 type Service struct {
-	log zerolog.Logger
-	db  *storage.DB
+	log         zerolog.Logger
+	db          *storage.DB
+	partitioner Partitioner
 }
 
 func New(cfg ServiceConfig) *Service {
 	ans := Service{
-		log: cfg.Log,
-		db:  cfg.DB,
+		log:         cfg.Log,
+		db:          cfg.DB,
+		partitioner: cfg.Partitioner,
 	}
 	return &ans
 }
 
 func (s *Service) Schedule(ctx context.Context, job entities.ScheduledJob) (entities.ScheduledJob, error) {
-	_, err := storage.InsertScheduledJob(ctx, s.db, job)
-	return job, err
+	s.partitioner.RLock()
+	defer s.partitioner.RUnlock()
+	job.Partition = s.partitioner.Pick()
+	return storage.InsertScheduledJob(ctx, s.db, job)
 }

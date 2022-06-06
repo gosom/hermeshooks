@@ -29,6 +29,7 @@ type ScheduledJob struct {
 
 func FromScheduledJobEntity(j entities.ScheduledJob) ScheduledJob {
 	ans := ScheduledJob{
+		ID:          j.ID,
 		UID:         j.UID,
 		Name:        j.Name,
 		Description: j.Description,

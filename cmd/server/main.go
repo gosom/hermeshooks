@@ -47,18 +47,21 @@ func run(ctx context.Context, logger zerolog.Logger, cfg config) error {
 	defer db.Close()
 
 	// -----------------------------------------------------------------
-	jobSrv := scheduledjobs.New(
-		scheduledjobs.ServiceConfig{
-			Log: logger,
-			DB:  db,
-		},
-	)
 	wSrv := workers.New(workers.WorkerServiceConfig{
 		Log: logger,
+		DB:  db,
 	})
 	go func() {
 		wSrv.StatsPrinter(ctx)
 	}()
+
+	jobSrv := scheduledjobs.New(
+		scheduledjobs.ServiceConfig{
+			Log:         logger,
+			DB:          db,
+			Partitioner: wSrv,
+		},
+	)
 
 	// -------------------------------------------------------------------
 	routerCfg := rest.RouterConfig{

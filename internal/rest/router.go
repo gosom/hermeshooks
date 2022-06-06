@@ -15,6 +15,7 @@ type ScheduledJobService interface {
 
 type WorkerService interface {
 	Register(ctx context.Context, name string) (entities.WorkerMeta, error)
+	UnRegister(ctx context.Context, name string) (entities.WorkerMeta, error)
 }
 
 type RouterConfig struct {
@@ -36,6 +37,7 @@ func NewRouter(cfg RouterConfig) *bunrouter.Router {
 				workerSrv: cfg.WorkerSrv,
 			}
 			group.POST("", workerHandler.Register)
+			group.DELETE("/:name", workerHandler.UnRegister)
 		})
 
 		g.WithGroup("/meta", func(group *bunrouter.Group) {

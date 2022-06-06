@@ -13,7 +13,7 @@ CREATE TABLE scheduled_jobs (
     signature VARCHAR(64) NOT NULL,
     run_at TIMESTAMP WITH TIME ZONE NOT NULL,
     retries INTEGER NOT NULL,
-    status VARCHAR(10) NOT NULL,
+    status INT NOT NULL,
     partition INT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE 

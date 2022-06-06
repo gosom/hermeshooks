@@ -34,3 +34,15 @@ func (h *WorkerHandler) Register(w http.ResponseWriter, r bunrouter.Request) err
 	}
 	return JSON(w, http.StatusOK, resp)
 }
+
+func (h *WorkerHandler) UnRegister(w http.ResponseWriter, r bunrouter.Request) error {
+	name := r.Param("name")
+	if len(name) == 0 {
+		return ValidationError{"name is missing"}
+	}
+	_, err := h.workerSrv.UnRegister(r.Context(), name)
+	if err != nil {
+		return err
+	}
+	return JSON(w, http.StatusOK, nil)
+}
