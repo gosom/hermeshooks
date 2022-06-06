@@ -16,7 +16,7 @@ func (e ValidationError) Error() string {
 }
 
 type HTTPError struct {
-	StatusCode int
+	StatusCode int `json:"-"`
 
 	Message string `json:"message"`
 }

@@ -2,19 +2,16 @@ package main
 
 import (
 	"context"
-	"database/sql"
-	"os"
 	"runtime"
-	"time"
 
 	"github.com/kelseyhightower/envconfig"
 	"github.com/rs/zerolog"
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
 
+	"github.com/gosom/hermeshooks/internal/common"
 	"github.com/gosom/hermeshooks/internal/rest"
 	"github.com/gosom/hermeshooks/internal/services/scheduledjobs"
+	"github.com/gosom/hermeshooks/internal/services/workers"
+	"github.com/gosom/hermeshooks/internal/storage"
 )
 
 func main() {
@@ -26,7 +23,7 @@ func main() {
 		panic(err)
 	}
 
-	logger := newLogger()
+	logger := common.NewLogger()
 
 	if err := run(ctx, logger, cfg); err != nil {
 		logger.Panic().AnErr("error", err).Msg("exiting with error")
@@ -38,33 +35,31 @@ type config struct {
 	DSN   string `envconfig:"DSN" default:"postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"`
 }
 
-func newLogger() zerolog.Logger {
-	zerolog.TimestampFunc = func() time.Time {
-		return time.Now().UTC()
-	}
-	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
-	return logger
-}
-
 func run(ctx context.Context, logger zerolog.Logger, cfg config) error {
 	// ----------------- db stuff --------------------------------------
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(cfg.DSN)))
-
-	maxOpenConns := 4 * runtime.GOMAXPROCS(0)
-	sqldb.SetMaxIdleConns(maxOpenConns)
-	sqldb.SetMaxIdleConns(maxOpenConns)
-
-	db := bun.NewDB(sqldb, pgdialect.New())
-	defer func() {
-		db.Close()
-		sqldb.Close()
-	}()
+	db, err := storage.New(storage.DbConfig{
+		DSN:          cfg.DSN,
+		MaxOpenConns: 4 * runtime.GOMAXPROCS(0),
+	})
+	if err != nil {
+		return err
+	}
+	defer db.Close()
 
 	// -----------------------------------------------------------------
+	wSrv := workers.New(workers.WorkerServiceConfig{
+		Log: logger,
+		DB:  db,
+	})
+	go func() {
+		wSrv.StatsPrinter(ctx)
+	}()
+
 	jobSrv := scheduledjobs.New(
 		scheduledjobs.ServiceConfig{
-			Log: logger,
-			DB:  db,
+			Log:         logger,
+			DB:          db,
+			Partitioner: wSrv,
 		},
 	)
 
@@ -72,6 +67,7 @@ func run(ctx context.Context, logger zerolog.Logger, cfg config) error {
 	routerCfg := rest.RouterConfig{
 		Log:             logger,
 		ScheduledJobSrv: jobSrv,
+		WorkerSrv:       wSrv,
 	}
 	router := rest.NewRouter(routerCfg)
 	srvConfig := rest.ServerConfig{

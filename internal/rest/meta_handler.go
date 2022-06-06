@@ -18,7 +18,7 @@ type MetaHandler struct {
 
 func (h *MetaHandler) Get(w http.ResponseWriter, r bunrouter.Request) error {
 	ans := MetaResponse{
-		PublicKey: pubKey,
+		PublicKey: h.pubKey,
 	}
 	return JSON(w, http.StatusOK, ans)
 }

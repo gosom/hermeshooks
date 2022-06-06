@@ -25,6 +25,7 @@ func Bind(r bunrouter.Request, ans any) error {
 func JSON(w http.ResponseWriter, statusCode int, value interface{}) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
+
 	if value == nil {
 		return nil
 	}
