@@ -4,9 +4,10 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/stdlib"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
 	"github.com/uptrace/bun/extra/bundebug"
 
 	"github.com/gosom/hermeshooks/internal/entities"
@@ -26,7 +27,14 @@ type DB struct {
 }
 
 func New(cfg DbConfig) (*DB, error) {
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(cfg.DSN)))
+	config, err := pgx.ParseConfig(cfg.DSN)
+	if err != nil {
+		return nil, err
+	}
+	config.PreferSimpleProtocol = true
+
+	sqldb := stdlib.OpenDB(*config)
+
 	sqldb.SetMaxIdleConns(cfg.MaxOpenConns)
 	sqldb.SetMaxIdleConns(cfg.MaxOpenConns)
 	db := bun.NewDB(sqldb, pgdialect.New())
@@ -45,7 +53,7 @@ func (o *DB) Close() error {
 	if err := o.sqldb.Close(); err != nil {
 		return err
 	}
-	return o.Close()
+	return nil // TODO How do I close bun?
 }
 
 func InsertScheduledJob(ctx context.Context, db IDB, job entities.ScheduledJob) (entities.ScheduledJob, error) {
@@ -62,20 +70,117 @@ func UpdateScheduledJobsPartitions(ctx context.Context, db IDB, job entities.Sch
 	return err
 }
 
-func UpdateJobsPartitions(ctx context.Context, db IDB, current int, target int) error {
+func UpdateJobsPartitions(ctx context.Context, db IDB, active []int, target int) error {
+	exclude := make([]int, len(active)+1)
+	exclude[0] = 0
+	for i := range active {
+		exclude[i+1] = active[i]
+	}
 	_, err := db.NewUpdate().
-		Table("scheduled_jobs").Set("partition = ?", target).
+		Table("scheduled_jobs").
+		Set("partition = ?", target).
+		Where("partition NOT IN (?)", bun.In(exclude)).
 		Where("status IN (?)", bun.In([]entities.ScheduledJobStatus{entities.Scheduled, entities.Pending})).
-		Where("partition = ?", current).
 		Exec(ctx)
 	return err
 }
 
-func UpdateOrhanJobs(ctx context.Context, db IDB, existing []int, target int) error {
+func AssignJobsToPartition(ctx context.Context, db IDB, target int, limit int) error {
+	subq := db.NewSelect().
+		Table("scheduled_jobs").
+		Column("id").
+		Where("partition = 0")
+	if limit > 0 {
+		subq = subq.Limit(limit)
+	}
+
 	_, err := db.NewUpdate().
-		Table("scheduled_jobs").Set("partition = ?", target).
-		Where("status IN (?)", bun.In([]entities.ScheduledJobStatus{entities.Scheduled, entities.Pending})).
-		Where("partition NOT IN (?)", bun.In(existing)).
+		With("_data", subq).
+		Table("scheduled_jobs").
+		TableExpr("_data").
+		Set("partition = ?", target).
+		Where("scheduled_jobs.id = _data.id").
 		Exec(ctx)
 	return err
+}
+
+func RemovesJobsFromPartition(ctx context.Context, db IDB, current int, limit int) error {
+	subq := db.NewSelect().
+		Table("scheduled_jobs").
+		Column("id").
+		Where("partition = ?", current).
+		Limit(limit)
+
+	_, err := db.NewUpdate().
+		With("_data", subq).
+		Table("scheduled_jobs").
+		TableExpr("_data").
+		Set("partition = 0").
+		Where("scheduled_jobs.id = _data.id").
+		Exec(ctx)
+	return err
+}
+
+func ReBalance(ctx context.Context, db IDB, active []int) error {
+	//db.ExecContext(ctx, "LOCK TABLE games IN ACCESS EXCLUSIVE MODE")
+	// first we put the orphan jobs to partition 0
+	if err := UpdateJobsPartitions(ctx, db, active, 0); err != nil {
+		return err
+	}
+	if len(active) == 0 {
+		return nil
+	}
+	type group struct {
+		Partition int
+		Count     int
+		ToAdd     int `bun:"-"`
+	}
+	var grps []group
+	err := db.NewSelect().
+		Model(&grps).
+		ModelTableExpr("scheduled_jobs AS t1").
+		Column("t1.partition").
+		ColumnExpr("Count(t1.id) as count").
+		Group("t1.partition").
+		Scan(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	var total int
+	m := make(map[int]group)
+	for i := range grps {
+		total += grps[i].Count
+		m[grps[i].Partition] = grps[i]
+	}
+	for _, partition := range active {
+		if _, ok := m[partition]; !ok {
+			m[partition] = group{Partition: partition}
+		}
+	}
+	perBucket := total / len(active)
+	for _, grp := range m {
+		if grp.Partition == 0 {
+			continue
+		}
+		grp.ToAdd = perBucket - grp.Count
+		if grp.ToAdd < 0 {
+			if err := RemovesJobsFromPartition(ctx, db, grp.Partition, -grp.ToAdd); err != nil {
+				return err
+			}
+		}
+		m[grp.Partition] = grp
+	}
+	var last group
+	for _, grp := range m {
+		if grp.Partition > 0 && grp.ToAdd > 0 {
+			limit := grp.ToAdd
+			if err := AssignJobsToPartition(ctx, db, grp.Partition, limit); err != nil {
+				return err
+			}
+			last = grp
+		}
+	}
+	return AssignJobsToPartition(ctx, db, last.Partition, 0)
 }

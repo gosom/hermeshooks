@@ -14,6 +14,10 @@ rest: ## rest starts the webserver
 worker: ## worker starts a worker
 	go run cmd/worker/main.go
 
+.PHONY: fixtures
+fixtures: ## fixtures inserts some dummy jobs
+	go run cmd/fixtures/main.go
+
 .PHONY: migrate
 migrate: ## migrate 
 	tern migrate --config migrations/tern.conf --migrations ./migrations

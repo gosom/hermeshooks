@@ -22,6 +22,7 @@ type workerService struct {
 	lock     sync.RWMutex
 	pnum     int
 	registry map[string]entities.WorkerMeta
+	ch       chan struct{}
 }
 
 func New(cfg WorkerServiceConfig) *workerService {
@@ -31,6 +32,7 @@ func New(cfg WorkerServiceConfig) *workerService {
 		db:       cfg.DB,
 		registry: make(map[string]entities.WorkerMeta),
 		pnum:     0,
+		ch:       make(chan struct{}, 1),
 	}
 	return &ans
 }
@@ -41,6 +43,23 @@ func (o *workerService) RLock() {
 
 func (o *workerService) RUnlock() {
 	o.lock.RUnlock()
+}
+
+func (o *workerService) StartReBalancer(ctx context.Context) {
+	for _ = range o.ch {
+		if err := o.rebalance(ctx); err != nil {
+			panic(err)
+		}
+	}
+}
+
+func (o *workerService) triggerRebalance() bool {
+	select {
+	case o.ch <- struct{}{}:
+		return true
+	default:
+	}
+	return false
 }
 
 // Pick returns a random partition. Makes sure a read lock is acquired
@@ -86,11 +105,8 @@ func (o *workerService) workerCleanUp(w entities.WorkerMeta) error {
 	o.lock.Lock()
 	delete(o.registry, w.Name)
 	o.lock.Unlock()
-	// maybe it's good to balance assignments among workers
-	// for now just pick one
-	o.lock.RLock()
-	defer o.lock.RUnlock()
-	return storage.UpdateJobsPartitions(context.Background(), o.db, w.Partition, o.Pick())
+	o.triggerRebalance()
+	return nil
 }
 
 func (o *workerService) getCurrentPartitions() []int {
@@ -101,8 +117,37 @@ func (o *workerService) getCurrentPartitions() []int {
 	return items
 }
 
+// rebalance happens AFTER registration/unregistration
+func (o *workerService) rebalance(ctx context.Context) error {
+	// We should get all the jobs that have a partition not in the worker list
+	// and allocate them to workers
+	o.lock.RLock()
+	t0 := time.Now()
+	o.log.Info().Msgf("Starting rebalance")
+	defer func() {
+		o.log.Info().Msgf("rebalance time %s\n", time.Now().Sub(t0))
+	}()
+	active := o.getCurrentPartitions()
+	o.lock.RUnlock()
+	tx, err := o.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := storage.ReBalance(ctx, tx, active); err != nil {
+		tx.Rollback()
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return nil
+}
+
 func (o *workerService) StartWorkerMonitor(ctx context.Context, w entities.WorkerMeta) {
-	defaultWaitDuration := 10 * time.Second
+	defaultWaitDuration := 3000 * time.Second
 	ticker := time.NewTicker(defaultWaitDuration)
 	o.log.Info().Msgf("next tick in %s", defaultWaitDuration)
 	defer func() {
@@ -110,10 +155,6 @@ func (o *workerService) StartWorkerMonitor(ctx context.Context, w entities.Worke
 	}()
 	defer ticker.Stop()
 	defer o.workerCleanUp(w)
-	current := o.getCurrentPartitions()
-	if err := storage.UpdateOrhanJobs(ctx, o.db, current, w.Partition); err != nil {
-		return
-	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -142,7 +183,7 @@ func (o *workerService) workerHealthCheck(name string) (entities.WorkerMeta, boo
 		o.log.Info().Msgf("worker %s is not registered", w.Name)
 		return w, false
 	}
-	if time.Now().UTC().Sub(w.LastHealthCheck) <= 20*time.Second {
+	if time.Now().UTC().Sub(w.LastHealthCheck) <= 300*time.Second {
 		o.log.Info().Msgf("worker %s is healthy", w.Name)
 		return w, true
 	}
@@ -151,20 +192,30 @@ func (o *workerService) workerHealthCheck(name string) (entities.WorkerMeta, boo
 
 func (o *workerService) Register(ctx context.Context, name string) (entities.WorkerMeta, error) {
 	o.lock.Lock()
-	defer o.lock.Unlock()
-	w, ok := o.registry[name]
-	if !ok {
-		o.pnum++
-		w.Name = name
-		w.Partition = o.pnum
-	} else {
-		w.CancelFunc() // we cancel the context of the running worker
+	select {
+	case <-ctx.Done():
+		return entities.WorkerMeta{}, ctx.Err()
+	default:
 	}
+	w, ok := o.registry[name]
+	if ok {
+		w.LastHealthCheck = time.Now().UTC()
+		o.registry[name] = w
+		o.lock.Unlock()
+		return w, nil
+	}
+	o.pnum++
+	w.Name = name
+	w.Partition = o.pnum
 	var workerCtx context.Context
 	workerCtx, w.CancelFunc = context.WithCancel(context.Background())
 	w.LastHealthCheck = time.Now().UTC()
 	o.registry[name] = w
+	o.lock.Unlock()
+
+	o.triggerRebalance()
 	go o.StartWorkerMonitor(workerCtx, w)
+
 	o.log.Info().Msgf("registered worker %s", w.Name)
 	return w, nil
 }

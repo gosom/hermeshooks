@@ -52,6 +52,9 @@ func run(ctx context.Context, logger zerolog.Logger, cfg config) error {
 		DB:  db,
 	})
 	go func() {
+		wSrv.StartReBalancer(ctx)
+	}()
+	go func() {
 		wSrv.StatsPrinter(ctx)
 	}()
 
