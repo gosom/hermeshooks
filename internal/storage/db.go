@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
@@ -56,9 +57,27 @@ func (o *DB) Close() error {
 	return nil // TODO How do I close bun?
 }
 
+func Notify(ctx context.Context, db IDB, payload any) error {
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	q := `NOTIFY "jobs:rebalance", ?`
+	_, err = db.ExecContext(ctx, q, string(b))
+	return err
+}
+
 func InsertScheduledJob(ctx context.Context, db IDB, job entities.ScheduledJob) (entities.ScheduledJob, error) {
 	j := FromScheduledJobEntity(job)
 	_, err := db.NewInsert().Model(&j).ExcludeColumn("id").Returning("id").Exec(ctx)
+	if err != nil {
+		return job, err
+	}
+	if err := Notify(ctx, db, map[string]int{
+		"partition": job.Partition,
+	}); err != nil {
+		return job, err
+	}
 	job = ToScheduledJobEntity(j)
 	return job, err
 }
@@ -182,5 +201,13 @@ func ReBalance(ctx context.Context, db IDB, active []int) error {
 			last = grp
 		}
 	}
-	return AssignJobsToPartition(ctx, db, last.Partition, 0)
+	if err := AssignJobsToPartition(ctx, db, last.Partition, 0); err != nil {
+		return err
+	}
+	for _, v := range active {
+		if err := Notify(ctx, db, map[string]int{"partition": v}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

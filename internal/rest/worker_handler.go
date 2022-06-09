@@ -46,3 +46,14 @@ func (h *WorkerHandler) UnRegister(w http.ResponseWriter, r bunrouter.Request) e
 	}
 	return JSON(w, http.StatusOK, nil)
 }
+
+func (h *WorkerHandler) HealthHandler(w http.ResponseWriter, r bunrouter.Request) error {
+	name := r.Param("name")
+	if len(name) == 0 {
+		return ValidationError{"name is missing"}
+	}
+	if err := h.workerSrv.Health(r.Context(), name); err != nil {
+		return err
+	}
+	return JSON(w, http.StatusOK, nil)
+}

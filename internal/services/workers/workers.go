@@ -2,6 +2,7 @@ package workers
 
 import (
 	"context"
+	"errors"
 	"math/rand"
 	"sync"
 	"time"
@@ -229,4 +230,16 @@ func (o *workerService) UnRegister(ctx context.Context, name string) (entities.W
 	}
 	w.CancelFunc()
 	return w, nil
+}
+
+func (o *workerService) Health(ctx context.Context, name string) error {
+	o.lock.Lock()
+	defer o.lock.Unlock()
+	w, ok := o.registry[name]
+	if !ok {
+		return errors.New("resource not found")
+	}
+	w.LastHealthCheck = time.Now().UTC()
+	o.registry[name] = w
+	return nil
 }

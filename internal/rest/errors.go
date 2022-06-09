@@ -1,11 +1,22 @@
 package rest
 
 import (
+	"errors"
 	"io"
 	"net/http"
 
 	"github.com/uptrace/bunrouter"
 )
+
+var ErrNotFound = errors.New("resource not found")
+
+type NotFoundError struct {
+	Message string
+}
+
+func (e NotFoundError) Error() string {
+	return e.Message
+}
 
 type ValidationError struct {
 	Message string
@@ -27,6 +38,11 @@ func (e HTTPError) Error() string {
 
 func NewHTTPError(err error) HTTPError {
 	switch err := err.(type) {
+	case NotFoundError:
+		return HTTPError{
+			StatusCode: http.StatusNotFound,
+			Message:    err.Message,
+		}
 	case ValidationError:
 		return HTTPError{
 			StatusCode: http.StatusBadRequest,
@@ -35,6 +51,11 @@ func NewHTTPError(err error) HTTPError {
 	}
 
 	switch err {
+	case ErrNotFound:
+		return HTTPError{
+			StatusCode: http.StatusNotFound,
+			Message:    "resource not found",
+		}
 	case io.EOF:
 		return HTTPError{
 			StatusCode: http.StatusBadRequest,
