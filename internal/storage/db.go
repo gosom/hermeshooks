@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/driver/pgdriver"
 	"github.com/uptrace/bun/extra/bundebug"
 
 	"github.com/gosom/hermeshooks/internal/entities"
@@ -57,6 +59,26 @@ func (o *DB) Close() error {
 	return nil // TODO How do I close bun?
 }
 
+func (o *DB) Listen(ctx context.Context, outc chan<- struct{}, p int) error {
+	ln := pgdriver.NewListener(o.DB)
+	if err := ln.Listen(ctx, "jobs:rebalance"); err != nil {
+		return err
+	}
+	for notif := range ln.Channel() {
+		tmp := map[string]int{}
+		if err := json.Unmarshal([]byte(notif.Payload), &tmp); err != nil {
+			return err
+		}
+		if tmp["partition"] == p {
+			select {
+			case outc <- struct{}{}:
+			default:
+			}
+		}
+	}
+	return nil
+}
+
 func Notify(ctx context.Context, db IDB, payload any) error {
 	b, err := json.Marshal(payload)
 	if err != nil {
@@ -65,6 +87,62 @@ func Notify(ctx context.Context, db IDB, payload any) error {
 	q := `NOTIFY "jobs:rebalance", ?`
 	_, err = db.ExecContext(ctx, q, string(b))
 	return err
+}
+
+func SelectJobsForExecution(ctx context.Context, db *DB, partition int, limit int, now time.Time) ([]entities.ScheduledJob, entities.ScheduledJob, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, entities.ScheduledJob{}, err
+	}
+	defer tx.Rollback()
+	var current []ScheduledJob
+	if err := tx.NewSelect().
+		Model(&current).
+		Where("status = ?", entities.Scheduled).
+		Where("runAt <= ?", now).
+		Order("runAt").
+		Limit(limit).
+		For("update").
+		Scan(ctx); err != nil {
+		return nil, entities.ScheduledJob{}, err
+	}
+	toUpdate := make([]int64, len(current), len(current))
+	for i := range current {
+		toUpdate[i] = current[i].ID
+	}
+	if len(toUpdate) > 0 {
+		if _, err := tx.NewUpdate().
+			Table("scheduled_jobs").
+			Set("status = ?", entities.Pending).
+			Where("id IN (?)", bun.In(toUpdate)).
+			Exec(ctx); err != nil {
+			return nil, entities.ScheduledJob{}, err
+		}
+	}
+	var nexts []ScheduledJob
+	afterTime := now
+	if len(current) > 0 {
+		afterTime = current[len(current)-1].RunAt
+	}
+	if err := tx.NewSelect().
+		Model(&nexts).
+		Where("status = ?", entities.Scheduled).
+		Where("runAt > ?", afterTime).
+		Order("runAt").
+		Limit(1).
+		Scan(ctx); err != nil {
+		return nil, entities.ScheduledJob{}, err
+	}
+	var next entities.ScheduledJob
+	if len(nexts) > 0 {
+		next = ToScheduledJobEntity(nexts[0])
+	}
+	items := make([]entities.ScheduledJob, len(current), len(current))
+	for i := range current {
+		items[i] = ToScheduledJobEntity(current[i])
+		items[i].Status = entities.Pending
+	}
+	return items, next, nil
 }
 
 func InsertScheduledJob(ctx context.Context, db IDB, job entities.ScheduledJob) (entities.ScheduledJob, error) {
@@ -210,4 +288,14 @@ func ReBalance(ctx context.Context, db IDB, active []int) error {
 		}
 	}
 	return nil
+}
+
+func UpdateJobStatus(ctx context.Context, db IDB, job entities.ScheduledJob) error {
+	j := FromScheduledJobEntity(job)
+	_, err := db.NewUpdate().
+		Model(j).
+		Column("status").
+		Where("id = ?", job.ID).
+		Exec(ctx)
+	return err
 }
