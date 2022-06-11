@@ -12,6 +12,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+var UserCtxKey struct{}
+
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }

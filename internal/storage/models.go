@@ -98,3 +98,19 @@ func ToEntitiesExecution(e Execution) entities.Execution {
 	}
 	return ans
 }
+
+type User struct {
+	bun.BaseModel
+	entities.User
+}
+
+func FromEntitiesUser(u entities.User) User {
+	ans := User{
+		User: u,
+	}
+	return ans
+}
+
+func ToEntitiesUser(u User) entities.User {
+	return u.User
+}

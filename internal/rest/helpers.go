@@ -3,8 +3,11 @@ package rest
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/felixge/httpsnoop"
@@ -41,18 +44,40 @@ func logHandler(log zerolog.Logger) func(next bunrouter.HandlerFunc) bunrouter.H
 			rec := NewResponseWriter(w)
 			now := time.Now()
 			err := next(rec.Wrapped, req)
+			realIp, _ := getIP(req)
 			dur := time.Since(now)
 			statusCode := rec.StatusCode()
 			ev := log.Info().
 				Str("method", req.Method).
 				Str("path", req.URL.Path).
 				Int("statusCode", statusCode).
+				IPAddr("ip", realIp).
 				Dur("duration", dur)
 			if err != nil {
 				ev.Err(err)
 			}
 			ev.Msg(http.StatusText(statusCode))
 			return err
+		}
+	}
+}
+
+func acceptedContentType(contentType ...string) func(next bunrouter.HandlerFunc) bunrouter.HandlerFunc {
+	return func(next bunrouter.HandlerFunc) bunrouter.HandlerFunc {
+		return func(w http.ResponseWriter, req bunrouter.Request) error {
+			incoming := req.Header.Get("Content-Type")
+			valid := false
+			for i := range contentType {
+				if contentType[i] == incoming {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				return ValidationError{Message: "Header value Content-Type must be application/json"}
+			}
+			next(w, req)
+			return nil
 		}
 	}
 }
@@ -82,6 +107,36 @@ func (w *ResponseWriter) StatusCode() int {
 		return w.statusCode
 	}
 	return http.StatusOK
+}
+
+func getIP(r bunrouter.Request) (net.IP, error) {
+	//Get IP from the X-REAL-IP header
+	ip := r.Header.Get("X-REAL-IP")
+	netIP := net.ParseIP(ip)
+	if len(netIP) > 0 {
+		return netIP, nil
+	}
+
+	//Get IP from X-FORWARDED-FOR header
+	ips := r.Header.Get("X-FORWARDED-FOR")
+	splitIps := strings.Split(ips, ",")
+	for _, ip := range splitIps {
+		netIP := net.ParseIP(ip)
+		if len(netIP) > 0 {
+			return netIP, nil
+		}
+	}
+
+	//Get IP from RemoteAddr
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return nil, err
+	}
+	netIP = net.ParseIP(ip)
+	if len(netIP) > 0 {
+		return netIP, nil
+	}
+	return nil, fmt.Errorf("No valid ip found")
 }
 
 //------------------------------------------------------------------------------

@@ -9,6 +9,11 @@ import (
 	"github.com/uptrace/bunrouter"
 )
 
+type AuthService interface {
+	RapidApi(next bunrouter.HandlerFunc) bunrouter.HandlerFunc
+	InternalApi(next bunrouter.HandlerFunc) bunrouter.HandlerFunc
+}
+
 type ScheduledJobService interface {
 	Schedule(ctx context.Context, job entities.ScheduledJob) (entities.ScheduledJob, error)
 }
@@ -23,6 +28,7 @@ type RouterConfig struct {
 	Log             zerolog.Logger
 	ScheduledJobSrv ScheduledJobService
 	WorkerSrv       WorkerService
+	AuthSrv         AuthService
 	PublicKey       *ecdsa.PublicKey
 }
 
@@ -30,9 +36,14 @@ func NewRouter(cfg RouterConfig) *bunrouter.Router {
 	router := bunrouter.New()
 
 	router.WithGroup("/api/v1", func(g *bunrouter.Group) {
-		g = g.Use(logHandler(cfg.Log), errorHandler)
+		g = g.Use(
+			logHandler(cfg.Log),
+			errorHandler,
+			acceptedContentType("application/json"),
+		)
 
 		g.WithGroup("/workers", func(group *bunrouter.Group) {
+			group = group.Use(cfg.AuthSrv.InternalApi)
 			workerHandler := WorkerHandler{
 				log:       cfg.Log,
 				workerSrv: cfg.WorkerSrv,
@@ -50,6 +61,7 @@ func NewRouter(cfg RouterConfig) *bunrouter.Router {
 		})
 
 		g.WithGroup("/scheduledJobs", func(group *bunrouter.Group) {
+			group = group.Use(cfg.AuthSrv.RapidApi)
 			scheduledJobsHandler := ScheduledJobsHandler{
 				log: cfg.Log,
 				srv: cfg.ScheduledJobSrv,

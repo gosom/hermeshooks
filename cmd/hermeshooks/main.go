@@ -15,6 +15,7 @@ import (
 	"github.com/gosom/hermeshooks/internal/common"
 	"github.com/gosom/hermeshooks/internal/entities"
 	"github.com/gosom/hermeshooks/internal/rest"
+	"github.com/gosom/hermeshooks/internal/services/auth"
 	"github.com/gosom/hermeshooks/internal/services/scheduledjobs"
 	"github.com/gosom/hermeshooks/internal/services/workers"
 	"github.com/gosom/hermeshooks/internal/storage"
@@ -43,9 +44,11 @@ func main() {
 // ============================================================================
 
 type serverConfig struct {
-	Addr  string `envconfig:"ADDR" default:"localhost:8000"`
-	Debug bool   `envconfig:"DEBUG" default:"false"`
-	DSN   string `envconfig:"DSN" default:"postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"`
+	Addr           string `envconfig:"ADDR" default:"localhost:8000"`
+	Debug          bool   `envconfig:"DEBUG" default:"false"`
+	DSN            string `envconfig:"DSN" default:"postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"`
+	RapidApiKey    string `envconfig:"RAPID_API_KEY" default:"secret"`
+	InternalApiKey string `envconfig:"INTERNAL_API_KEY" default:"secret"`
 }
 
 func serverTask(ctx context.Context) *cli.Command {
@@ -78,6 +81,15 @@ func runServer(ctx context.Context, logger zerolog.Logger, cfg serverConfig) err
 	defer db.Close()
 
 	// -----------------------------------------------------------------
+	aSrv, err := auth.New(auth.Config{
+		Log:            logger,
+		DB:             db,
+		RapidApiKey:    cfg.RapidApiKey,
+		InternalApiKey: cfg.InternalApiKey,
+	})
+	if err != nil {
+		return err
+	}
 	wSrv := workers.New(workers.WorkerServiceConfig{
 		Log: logger,
 		DB:  db,
@@ -102,6 +114,7 @@ func runServer(ctx context.Context, logger zerolog.Logger, cfg serverConfig) err
 		Log:             logger,
 		ScheduledJobSrv: jobSrv,
 		WorkerSrv:       wSrv,
+		AuthSrv:         aSrv,
 	}
 	router := rest.NewRouter(routerCfg)
 	srvConfig := rest.ServerConfig{

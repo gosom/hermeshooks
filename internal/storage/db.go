@@ -338,3 +338,34 @@ func InsertExecution(ctx context.Context, db IDB, job entities.Execution) (entit
 	return ans, nil
 
 }
+
+func InsertUser(ctx context.Context, db IDB, u entities.User) (entities.User, error) {
+	su := FromEntitiesUser(u)
+	if _, err := db.NewInsert().
+		Model(&su).
+		ExcludeColumn("id").
+		Returning("id").
+		Exec(ctx); err != nil {
+		return entities.User{}, err
+	}
+	u = ToEntitiesUser(su)
+	return u, nil
+}
+
+func UserExists(ctx context.Context, db IDB, username string) (bool, error) {
+	exists, err := db.NewSelect().
+		Model((*User)(nil)).Where("username = ?", username).
+		Exists(ctx)
+	return exists, err
+}
+
+func GetUserByUserName(ctx context.Context, db IDB, username string) (entities.User, error) {
+	var u User
+	if err := db.NewSelect().
+		Model(&u).
+		Where("username = ?", username).
+		Scan(ctx); err != nil {
+		return entities.User{}, err
+	}
+	return ToEntitiesUser(u), nil
+}
