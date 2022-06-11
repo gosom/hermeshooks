@@ -11,9 +11,9 @@ import (
 type ScheduledJob struct {
 	bun.BaseModel
 
-	ID          int64 `"bun:id,pk,autoincrement"`
+	ID          int64 `bun:"id,pk,autoincrement"`
 	UID         uuid.UUID
-	Name        string `"bun:"name,notnull"`
+	Name        string
 	Description string
 	Url         string
 	Payload     string
@@ -63,6 +63,38 @@ func ToScheduledJobEntity(j ScheduledJob) entities.ScheduledJob {
 		Partition:   j.Partition,
 		CreatedAt:   j.CreatedAt,
 		UpdatedAt:   j.UpdatedAt.Time,
+	}
+	return ans
+}
+
+type Execution struct {
+	bun.BaseModel
+
+	ID             int64 `bun:"id,pk,autoincrement"`
+	ScheduledJobID int64 `bun:"scheduled_job_id"`
+	StatusCode     int
+	Msg            string
+	CreatedAt      time.Time
+}
+
+func FromEntitiesExecution(e entities.Execution) Execution {
+	ans := Execution{
+		ID:             e.ID,
+		ScheduledJobID: e.ScheduledJobID,
+		StatusCode:     e.StatusCode,
+		Msg:            e.Msg,
+		CreatedAt:      e.CreatedAt,
+	}
+	return ans
+}
+
+func ToEntitiesExecution(e Execution) entities.Execution {
+	ans := entities.Execution{
+		ID:             e.ID,
+		ScheduledJobID: e.ScheduledJobID,
+		StatusCode:     e.StatusCode,
+		Msg:            e.Msg,
+		CreatedAt:      e.CreatedAt,
 	}
 	return ans
 }

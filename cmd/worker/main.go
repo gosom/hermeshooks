@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"runtime"
 
 	"github.com/kelseyhightower/envconfig"
 	"github.com/rs/zerolog"
 
 	"github.com/gosom/hermeshooks/internal/common"
+	"github.com/gosom/hermeshooks/internal/storage"
 	"github.com/gosom/hermeshooks/internal/worker"
 )
 
@@ -33,9 +35,20 @@ type config struct {
 }
 
 func run(ctx context.Context, logger zerolog.Logger, cfg config) error {
+	// ----------------- db stuff --------------------------------------
+	db, err := storage.New(storage.DbConfig{
+		DSN:          cfg.DSN,
+		MaxOpenConns: 4 * runtime.GOMAXPROCS(0),
+		PgDriver:     true,
+	})
+	if err != nil {
+		return err
+	}
+	defer db.Close()
 	wc := worker.WorkerConfig{
 		Log:  logger,
 		Node: cfg.Node,
+		DB:   db,
 	}
 
 	w, err := worker.NewWorker(wc)

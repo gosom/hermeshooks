@@ -33,6 +33,7 @@ func (m monitor) start(ctx context.Context) (<-chan entities.ScheduledJob, <-cha
 		timer := time.NewTimer(defaultWaitDuration)
 		defer timer.Stop()
 		for {
+			m.log.Info().Msgf("monito waiting stop")
 			if !timer.Stop() {
 				select {
 				case <-timer.C:
@@ -59,12 +60,17 @@ func (m monitor) start(ctx context.Context) (<-chan entities.ScheduledJob, <-cha
 					outc <- jobs[i]
 				}
 			}()
-			waitTime := next.RunAt.Sub(now)
-			if waitTime > 0 {
-				timer.Reset(waitTime)
-			} else {
-				timer.Reset(defaultWaitDuration)
+			m.log.Info().Str("monitor", "yes").Msgf("next job %+b", next)
+			waitTime := defaultWaitDuration
+			if !next.RunAt.IsZero() {
+				switch wt := next.RunAt.Sub(now); {
+				case wt > 0:
+					waitTime = wt
+				default:
+					waitTime = time.Nanosecond
+				}
 			}
+			timer.Reset(waitTime)
 			m.log.Info().Dur("waitTime", waitTime).Msg("monitor waits")
 			// TODO select jobs from partition
 			// sent the ones in the past for execution
@@ -78,6 +84,7 @@ func (m monitor) start(ctx context.Context) (<-chan entities.ScheduledJob, <-cha
 				wg.Wait()
 				return
 			}
+			m.log.Info().Msgf("monitor timer triggered")
 		}
 	}()
 	return outc, errc

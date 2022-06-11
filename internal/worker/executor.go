@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -23,11 +24,14 @@ type executor struct {
 }
 
 func (e executor) start(ctx context.Context) error {
+	e.log.Info().Msg("starting executor")
 	sem := make(chan bool, e.threads)
 	for j := range e.iq {
 		sem <- true
 		go func(job entities.ScheduledJob) {
-			defer func() { sem <- true }()
+			defer func() {
+				<-sem
+			}()
 			if err := e.process(ctx, job); err != nil {
 				e.log.Error().Err(err)
 			} else {
@@ -47,6 +51,7 @@ func (e executor) process(ctx context.Context, job entities.ScheduledJob) error 
 		if err != nil {
 			return 0, fmt.Errorf("fail to prepare req error: %w", err)
 		}
+		e.log.Info().Msgf("prepared req for job %d", job.ID)
 		resp, err := common.RetryDo(e.client, req, job.Retries)
 		if err != nil {
 			return 0, fmt.Errorf("request fail with error: %w", err)
@@ -54,16 +59,40 @@ func (e executor) process(ctx context.Context, job entities.ScheduledJob) error 
 		if resp == nil {
 			return 0, fmt.Errorf("resp is nil")
 		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
 		return resp.StatusCode, nil
 	}()
 
+	e.log.Info().Int64("jobId", job.ID).Err(err).Msg("process job")
 	_ = statusCode
+
+	job.UpdatedAt = time.Now().UTC()
+	var msg string
 	if err != nil {
 		job.Status = entities.Success
+		msg = err.Error()
 	} else {
 		job.Status = entities.Fail
 	}
-	return storage.UpdateJobStatus(ctx, e.db, job)
+	execution := entities.Execution{
+		ScheduledJobID: job.ID,
+		StatusCode:     statusCode,
+		Msg:            msg,
+		CreatedAt:      job.UpdatedAt,
+	}
+	tx, err := e.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := storage.UpdateJobStatus(ctx, tx, job); err != nil {
+		return err
+	}
+	if _, err := storage.InsertExecution(ctx, tx, execution); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (e executor) prepareReq(ctx context.Context, job entities.ScheduledJob) (*http.Request, error) {
@@ -80,5 +109,5 @@ func (e executor) prepareReq(ctx context.Context, job entities.ScheduledJob) (*h
 	// TODO compute our sig using our PrivateKey
 	signature := ""
 	req.Header.Set("X-HERMESHOOKS-SIG", signature)
-	return nil, nil
+	return req, nil
 }

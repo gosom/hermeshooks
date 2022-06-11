@@ -22,6 +22,7 @@ type DbConfig struct {
 	DSN          string
 	MaxOpenConns int
 	Debug        bool
+	PgDriver     bool
 }
 
 type DB struct {
@@ -30,16 +31,22 @@ type DB struct {
 }
 
 func New(cfg DbConfig) (*DB, error) {
-	config, err := pgx.ParseConfig(cfg.DSN)
-	if err != nil {
-		return nil, err
+
+	var sqldb *sql.DB
+	if cfg.PgDriver {
+		sqldb = sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(cfg.DSN)))
+	} else {
+		config, err := pgx.ParseConfig(cfg.DSN)
+		if err != nil {
+			return nil, err
+		}
+		config.PreferSimpleProtocol = true
+		sqldb = stdlib.OpenDB(*config)
 	}
-	config.PreferSimpleProtocol = true
-
-	sqldb := stdlib.OpenDB(*config)
 
 	sqldb.SetMaxIdleConns(cfg.MaxOpenConns)
 	sqldb.SetMaxIdleConns(cfg.MaxOpenConns)
+
 	db := bun.NewDB(sqldb, pgdialect.New())
 	db.AddQueryHook(bundebug.NewQueryHook(
 		bundebug.WithVerbose(true),
@@ -99,8 +106,9 @@ func SelectJobsForExecution(ctx context.Context, db *DB, partition int, limit in
 	if err := tx.NewSelect().
 		Model(&current).
 		Where("status = ?", entities.Scheduled).
-		Where("runAt <= ?", now).
-		Order("runAt").
+		Where("partition = ?", partition).
+		Where("run_at <= ?", now).
+		Order("run_at").
 		Limit(limit).
 		For("update").
 		Scan(ctx); err != nil {
@@ -127,8 +135,9 @@ func SelectJobsForExecution(ctx context.Context, db *DB, partition int, limit in
 	if err := tx.NewSelect().
 		Model(&nexts).
 		Where("status = ?", entities.Scheduled).
-		Where("runAt > ?", afterTime).
-		Order("runAt").
+		Where("partition = ?", partition).
+		Where("run_at >= ?", afterTime).
+		Order("run_at").
 		Limit(1).
 		Scan(ctx); err != nil {
 		return nil, entities.ScheduledJob{}, err
@@ -142,7 +151,7 @@ func SelectJobsForExecution(ctx context.Context, db *DB, partition int, limit in
 		items[i] = ToScheduledJobEntity(current[i])
 		items[i].Status = entities.Pending
 	}
-	return items, next, nil
+	return items, next, tx.Commit()
 }
 
 func InsertScheduledJob(ctx context.Context, db IDB, job entities.ScheduledJob) (entities.ScheduledJob, error) {
@@ -168,17 +177,16 @@ func UpdateScheduledJobsPartitions(ctx context.Context, db IDB, job entities.Sch
 }
 
 func UpdateJobsPartitions(ctx context.Context, db IDB, active []int, target int) error {
-	exclude := make([]int, len(active)+1)
-	exclude[0] = 0
-	for i := range active {
-		exclude[i+1] = active[i]
-	}
-	_, err := db.NewUpdate().
+	q := db.NewUpdate().
 		Table("scheduled_jobs").
 		Set("partition = ?", target).
-		Where("partition NOT IN (?)", bun.In(exclude)).
-		Where("status IN (?)", bun.In([]entities.ScheduledJobStatus{entities.Scheduled, entities.Pending})).
-		Exec(ctx)
+		Set("status = ?", entities.Scheduled)
+	if len(active) > 0 {
+		q = q.Where("partition NOT IN (?)", bun.In(active))
+	}
+	q = q.Where("status IN (?)", bun.In([]entities.ScheduledJobStatus{entities.Scheduled, entities.Pending}))
+
+	_, err := q.Exec(ctx)
 	return err
 }
 
@@ -293,9 +301,24 @@ func ReBalance(ctx context.Context, db IDB, active []int) error {
 func UpdateJobStatus(ctx context.Context, db IDB, job entities.ScheduledJob) error {
 	j := FromScheduledJobEntity(job)
 	_, err := db.NewUpdate().
-		Model(j).
+		Model(&j).
 		Column("status").
-		Where("id = ?", job.ID).
+		Column("updated_at").
+		Where("id = ?", j.ID).
 		Exec(ctx)
 	return err
+}
+
+func InsertExecution(ctx context.Context, db IDB, job entities.Execution) (entities.Execution, error) {
+	e := FromEntitiesExecution(job)
+	if _, err := db.NewInsert().
+		Model(&e).
+		ExcludeColumn("id").
+		Returning("id").
+		Exec(ctx); err != nil {
+		return entities.Execution{}, err
+	}
+	ans := ToEntitiesExecution(e)
+	return ans, nil
+
 }

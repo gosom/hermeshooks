@@ -17,18 +17,20 @@ import (
 )
 
 type WorkerConfig struct {
-	Log       zerolog.Logger
-	Node      string
-	NetClient common.HTTPClient
-	DB        *storage.DB
+	Log         zerolog.Logger
+	Node        string
+	NetClient   common.HTTPClient
+	DB          *storage.DB
+	Concurrency int
 }
 
 type worker struct {
-	name      string
-	node      string
-	log       zerolog.Logger
-	netClient common.HTTPClient
-	db        *storage.DB
+	name        string
+	node        string
+	log         zerolog.Logger
+	netClient   common.HTTPClient
+	db          *storage.DB
+	concurrency int
 }
 
 func NewWorker(cfg WorkerConfig) (*worker, error) {
@@ -43,12 +45,16 @@ func NewWorker(cfg WorkerConfig) (*worker, error) {
 			Timeout: time.Second * 5,
 		}
 	}
+	if cfg.Concurrency == 0 {
+		cfg.Concurrency = 4
+	}
 	ans := worker{
-		name:      uuid.New().String(),
-		log:       cfg.Log,
-		node:      cfg.Node,
-		netClient: cfg.NetClient,
-		db:        cfg.DB,
+		name:        uuid.New().String(),
+		log:         cfg.Log,
+		node:        cfg.Node,
+		netClient:   cfg.NetClient,
+		db:          cfg.DB,
+		concurrency: cfg.Concurrency,
 	}
 	return &ans, nil
 }
@@ -72,9 +78,30 @@ func (w *worker) Start(ctx context.Context) error {
 	}
 	jobsc, errc2 := m.start(ctx)
 
-	_ = jobsc
+	ex := executor{
+		log:     w.log,
+		db:      w.db,
+		iq:      jobsc,
+		threads: w.concurrency,
+		client:  w.netClient,
+	}
 
 	errc3 := func() <-chan error {
+		errc := make(chan error, 1)
+		go func() {
+			defer func() {
+				w.log.Info().Msg("exiting executor")
+			}()
+			defer close(errc)
+			if err := ex.start(ctx); err != nil {
+				errc <- err
+				return
+			}
+		}()
+		return errc
+	}()
+
+	errc4 := func() <-chan error {
 		errc := make(chan error, 1)
 		go func() {
 			defer close(errc)
@@ -93,6 +120,8 @@ func (w *worker) Start(ctx context.Context) error {
 	case err := <-errc2:
 		return err
 	case err := <-errc3:
+		return err
+	case err := <-errc4:
 		return err
 	}
 	return nil
@@ -138,7 +167,7 @@ func (w *worker) unregister(ctx context.Context) error {
 }
 
 func (w *worker) doReq(req *http.Request, v any) error {
-	resp, err := w.netClient.Do(req)
+	resp, err := common.RetryDo(w.netClient, req, 3)
 	if err != nil {
 		return err
 	}
@@ -147,7 +176,7 @@ func (w *worker) doReq(req *http.Request, v any) error {
 		resp.Body.Close()
 	}()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("register - invalid status code %d", resp.StatusCode)
+		return fmt.Errorf("doReq - invalid status code %d", resp.StatusCode)
 	}
 	if v != nil {
 		return json.NewDecoder(resp.Body).Decode(v)

@@ -38,7 +38,7 @@ func RetryDo(client HTTPClient, req *http.Request, maxRetries int) (*http.Respon
 		maxRetries = 1
 	}
 	backoff := func(i int) time.Duration {
-		return time.Duration(expSquaring(3, i))*time.Second + 5*time.Microsecond
+		return time.Duration(expSquaring(2, i))*time.Second + 5*time.Microsecond
 
 	}
 	for i := 1; i <= maxRetries; i++ {
@@ -53,7 +53,9 @@ func RetryDo(client HTTPClient, req *http.Request, maxRetries int) (*http.Respon
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 		}
-		time.Sleep(backoff(i))
+		if i != maxRetries {
+			time.Sleep(backoff(i))
+		}
 	}
 	return resp, err
 }

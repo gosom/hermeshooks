@@ -13,27 +13,33 @@ import (
 )
 
 type WorkerServiceConfig struct {
-	Log zerolog.Logger
-	DB  *storage.DB
+	Log        zerolog.Logger
+	DB         *storage.DB
+	HealthFreq time.Duration
 }
 
 type workerService struct {
-	log      zerolog.Logger
-	db       *storage.DB
-	lock     sync.RWMutex
-	pnum     int
-	registry map[string]entities.WorkerMeta
-	ch       chan struct{}
+	log        zerolog.Logger
+	db         *storage.DB
+	lock       sync.RWMutex
+	pnum       int
+	registry   map[string]entities.WorkerMeta
+	ch         chan struct{}
+	healthFreq time.Duration
 }
 
 func New(cfg WorkerServiceConfig) *workerService {
 	rand.Seed(time.Now().UnixNano())
+	if cfg.HealthFreq == 0 {
+		cfg.HealthFreq = 10 * time.Second
+	}
 	ans := workerService{
-		log:      cfg.Log,
-		db:       cfg.DB,
-		registry: make(map[string]entities.WorkerMeta),
-		pnum:     0,
-		ch:       make(chan struct{}, 1),
+		log:        cfg.Log,
+		db:         cfg.DB,
+		registry:   make(map[string]entities.WorkerMeta),
+		pnum:       0,
+		ch:         make(chan struct{}, 1),
+		healthFreq: cfg.HealthFreq,
 	}
 	return &ans
 }
@@ -47,6 +53,9 @@ func (o *workerService) RUnlock() {
 }
 
 func (o *workerService) StartReBalancer(ctx context.Context) {
+	if err := o.rebalance(ctx); err != nil {
+		panic(err)
+	}
 	for _ = range o.ch {
 		if err := o.rebalance(ctx); err != nil {
 			panic(err)
@@ -79,7 +88,7 @@ func (o *workerService) Pick() int {
 }
 
 func (o *workerService) StatsPrinter(ctx context.Context) error {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	done := make(chan struct{})
 	go func() {
@@ -148,9 +157,8 @@ func (o *workerService) rebalance(ctx context.Context) error {
 }
 
 func (o *workerService) StartWorkerMonitor(ctx context.Context, w entities.WorkerMeta) {
-	defaultWaitDuration := 3000 * time.Second
-	ticker := time.NewTicker(defaultWaitDuration)
-	o.log.Info().Msgf("next tick in %s", defaultWaitDuration)
+	ticker := time.NewTicker(o.healthFreq)
+	o.log.Info().Msgf("next tick in %s", o.healthFreq)
 	defer func() {
 		o.log.Info().Msgf("worker %s has been de-registered", w.Name)
 	}()
@@ -184,7 +192,7 @@ func (o *workerService) workerHealthCheck(name string) (entities.WorkerMeta, boo
 		o.log.Info().Msgf("worker %s is not registered", w.Name)
 		return w, false
 	}
-	if time.Now().UTC().Sub(w.LastHealthCheck) <= 300*time.Second {
+	if time.Now().UTC().Sub(w.LastHealthCheck) <= 2*o.healthFreq {
 		o.log.Info().Msgf("worker %s is healthy", w.Name)
 		return w, true
 	}
