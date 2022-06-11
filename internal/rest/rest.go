@@ -35,7 +35,7 @@ func New(cfg ServerConfig) (*server, error) {
 	}
 	// put some sane defaults
 	if len(cfg.Addr) == 0 {
-		cfg.Addr = "localhost:8000"
+		cfg.Addr = "127.0.0.1:8000"
 	}
 	if cfg.WriteTimeout == 0 {
 		cfg.WriteTimeout = time.Second * 10

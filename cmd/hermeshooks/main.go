@@ -43,6 +43,7 @@ func main() {
 // ============================================================================
 
 type serverConfig struct {
+	Addr  string `envconfig:"ADDR" default:"localhost:8000"`
 	Debug bool   `envconfig:"DEBUG" default:"false"`
 	DSN   string `envconfig:"DSN" default:"postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"`
 }
@@ -104,6 +105,7 @@ func runServer(ctx context.Context, logger zerolog.Logger, cfg serverConfig) err
 	}
 	router := rest.NewRouter(routerCfg)
 	srvConfig := rest.ServerConfig{
+		Addr:    cfg.Addr,
 		Log:     logger,
 		Handler: router,
 	}

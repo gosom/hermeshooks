@@ -248,12 +248,24 @@ func ReBalance(ctx context.Context, db IDB, active []int) error {
 		ModelTableExpr("scheduled_jobs AS t1").
 		Column("t1.partition").
 		ColumnExpr("Count(t1.id) as count").
+		Where("status IN (?)", bun.In([]entities.ScheduledJobStatus{entities.Scheduled, entities.Pending})).
 		Group("t1.partition").
 		Scan(ctx)
 
 	if err != nil {
 		return err
 	}
+
+	isActive := func(p int) bool {
+		for _, v := range active {
+			if p == v {
+				return true
+			}
+		}
+		return false
+	}
+
+	_ = isActive
 
 	var total int
 	m := make(map[int]group)
@@ -271,7 +283,11 @@ func ReBalance(ctx context.Context, db IDB, active []int) error {
 		if grp.Partition == 0 {
 			continue
 		}
-		grp.ToAdd = perBucket - grp.Count
+		if isActive(grp.Partition) {
+			grp.ToAdd = perBucket - grp.Count
+		} else {
+			grp.ToAdd = -grp.Count
+		}
 		if grp.ToAdd < 0 {
 			if err := RemovesJobsFromPartition(ctx, db, grp.Partition, -grp.ToAdd); err != nil {
 				return err
@@ -281,7 +297,7 @@ func ReBalance(ctx context.Context, db IDB, active []int) error {
 	}
 	var last group
 	for _, grp := range m {
-		if grp.Partition > 0 && grp.ToAdd > 0 {
+		if grp.Partition > 0 && grp.ToAdd > 0 && isActive(grp.Partition) {
 			limit := grp.ToAdd
 			if err := AssignJobsToPartition(ctx, db, grp.Partition, limit); err != nil {
 				return err
