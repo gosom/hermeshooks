@@ -82,7 +82,6 @@ func errorHandler(next bunrouter.HandlerFunc) bunrouter.HandlerFunc {
 			httpErr := NewHTTPError(err)
 			_ = JSON(w, httpErr.StatusCode, httpErr)
 		}
-
 		return err // return the err in case there other middlewares
 	}
 }

@@ -26,6 +26,7 @@ type workerService struct {
 	registry   map[string]entities.WorkerMeta
 	ch         chan struct{}
 	healthFreq time.Duration
+	startTime  time.Time
 }
 
 func New(cfg WorkerServiceConfig) *workerService {
@@ -40,8 +41,25 @@ func New(cfg WorkerServiceConfig) *workerService {
 		pnum:       0,
 		ch:         make(chan struct{}, 1),
 		healthFreq: cfg.HealthFreq,
+		startTime:  time.Now().UTC(),
 	}
 	return &ans
+}
+
+func (o *workerService) UpSince(ctx context.Context) time.Time {
+	return o.startTime
+}
+
+func (o *workerService) ActiveWorkers(ctx context.Context) int {
+	o.RLock()
+	defer o.RUnlock()
+	p := o.getCurrentPartitions()
+	return len(p)
+}
+
+func (o *workerService) DbOk(ctx context.Context) bool {
+	err := o.db.PingContext(ctx)
+	return err == nil
 }
 
 func (o *workerService) RLock() {

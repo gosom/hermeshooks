@@ -3,6 +3,7 @@ package rest
 import (
 	"context"
 	"crypto/ecdsa"
+	"time"
 
 	"github.com/gosom/hermeshooks/internal/entities"
 	"github.com/rs/zerolog"
@@ -22,6 +23,9 @@ type WorkerService interface {
 	Register(ctx context.Context, name string) (entities.WorkerMeta, error)
 	UnRegister(ctx context.Context, name string) (entities.WorkerMeta, error)
 	Health(ctx context.Context, name string) error
+	UpSince(ctx context.Context) time.Time
+	ActiveWorkers(ctx context.Context) int
+	DbOk(ctx context.Context) bool
 }
 
 type RouterConfig struct {
@@ -38,9 +42,15 @@ func NewRouter(cfg RouterConfig) *bunrouter.Router {
 	router.WithGroup("/api/v1", func(g *bunrouter.Group) {
 		g = g.Use(
 			logHandler(cfg.Log),
-			acceptedContentType("application/json"),
 			errorHandler,
+			acceptedContentType("application/json"),
 		)
+
+		healthHandler := HealthHandler{
+			log:       cfg.Log,
+			workerSrv: cfg.WorkerSrv,
+		}
+		g.GET("/health", healthHandler.Get)
 
 		g.WithGroup("/workers", func(group *bunrouter.Group) {
 			group = group.Use(cfg.AuthSrv.InternalApi)

@@ -76,8 +76,8 @@ func acceptedContentType(contentType ...string) func(next bunrouter.HandlerFunc)
 			if !valid {
 				return ValidationError{Message: "Header value Content-Type must be application/json"}
 			}
-			next(w, req)
-			return nil
+			err := next(w, req)
+			return err
 		}
 	}
 }
