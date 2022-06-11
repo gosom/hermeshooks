@@ -38,8 +38,8 @@ func NewRouter(cfg RouterConfig) *bunrouter.Router {
 	router.WithGroup("/api/v1", func(g *bunrouter.Group) {
 		g = g.Use(
 			logHandler(cfg.Log),
-			errorHandler,
 			acceptedContentType("application/json"),
+			errorHandler,
 		)
 
 		g.WithGroup("/workers", func(group *bunrouter.Group) {

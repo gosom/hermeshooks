@@ -71,9 +71,7 @@ func NewHTTPError(err error) HTTPError {
 
 func errorHandler(next bunrouter.HandlerFunc) bunrouter.HandlerFunc {
 	return func(w http.ResponseWriter, req bunrouter.Request) error {
-		// Call the next handler on the chain to get the error.
 		err := next(w, req)
-
 		switch err := err.(type) {
 		case nil:
 			// no error

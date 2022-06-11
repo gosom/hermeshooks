@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -41,12 +40,8 @@ func New(cfg Config) (*AuthService, error) {
 func (a *AuthService) RapidApi(next bunrouter.HandlerFunc) bunrouter.HandlerFunc {
 	return func(w http.ResponseWriter, req bunrouter.Request) error {
 		incoming := req.Header.Get("X-API-KEY")
-		a.log.Info().Str("api", incoming).Str("vs", a.rapidApiKey).Msg("")
 		if incoming != a.rapidApiKey {
 			return toJSON(w, http.StatusUnauthorized, nil)
-		}
-		for k, v := range req.Header {
-			fmt.Println(k, v)
 		}
 		suffix := req.Header.Get("X-Rapidapi-User")
 		if len(suffix) == 0 {
@@ -67,7 +62,11 @@ func (a *AuthService) RapidApi(next bunrouter.HandlerFunc) bunrouter.HandlerFunc
 			}
 			switch exists {
 			case true:
-				return storage.GetUserByUserName(ctx, tx, username)
+				user, err = storage.GetUserByUserName(ctx, tx, username)
+				if err != nil {
+					return user, err
+				}
+				return user, tx.Commit()
 			default:
 				user.Username = username
 				user.CreatedAt = time.Now().UTC()
@@ -82,8 +81,7 @@ func (a *AuthService) RapidApi(next bunrouter.HandlerFunc) bunrouter.HandlerFunc
 			return err
 		}
 		ctx := context.WithValue(req.Context(), common.UserCtxKey, user)
-		next(w, req.WithContext(ctx))
-		return nil
+		return next(w, req.WithContext(ctx))
 	}
 }
 
@@ -93,8 +91,8 @@ func (a *AuthService) InternalApi(next bunrouter.HandlerFunc) bunrouter.HandlerF
 		if incoming != a.internalApiKey {
 			return toJSON(w, http.StatusUnauthorized, nil)
 		}
-		next(w, req)
-		return nil
+		err := next(w, req)
+		return err
 	}
 }
 
