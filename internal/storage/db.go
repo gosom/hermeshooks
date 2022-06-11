@@ -265,8 +265,6 @@ func ReBalance(ctx context.Context, db IDB, active []int) error {
 		return false
 	}
 
-	_ = isActive
-
 	var total int
 	m := make(map[int]group)
 	for i := range grps {
