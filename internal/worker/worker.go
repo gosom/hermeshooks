@@ -22,6 +22,7 @@ type WorkerConfig struct {
 	NetClient   common.HTTPClient
 	DB          *storage.DB
 	Concurrency int
+	ApiKey      string
 }
 
 type worker struct {
@@ -31,6 +32,7 @@ type worker struct {
 	netClient   common.HTTPClient
 	db          *storage.DB
 	concurrency int
+	apiKey      string
 }
 
 func NewWorker(cfg WorkerConfig) (*worker, error) {
@@ -55,6 +57,7 @@ func NewWorker(cfg WorkerConfig) (*worker, error) {
 		netClient:   cfg.NetClient,
 		db:          cfg.DB,
 		concurrency: cfg.Concurrency,
+		apiKey:      cfg.ApiKey,
 	}
 	return &ans, nil
 }
@@ -144,6 +147,7 @@ func (w *worker) register(ctx context.Context) (int, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "hermeshook worker")
+	req.Header.Set("X-API-KEY", w.apiKey)
 	registerResp := struct {
 		Partition int `json:"partition"`
 	}{}
@@ -163,6 +167,7 @@ func (w *worker) unregister(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "hermeshook worker")
+	req.Header.Set("X-API-KEY", w.apiKey)
 	return w.doReq(req, nil)
 }
 
@@ -210,6 +215,7 @@ func (w *worker) pingReq(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "hermeshook worker")
+	req.Header.Set("X-API-KEY", w.apiKey)
 
 	return w.doReq(req, nil)
 }

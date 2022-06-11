@@ -133,9 +133,10 @@ func runServer(ctx context.Context, logger zerolog.Logger, cfg serverConfig) err
 // ============================================================================
 
 type workerConfig struct {
-	Debug bool   `envconfig:"DEBUG" default:"false"`
-	Node  string `envconfig:"NODE" default:"http://localhost:8000"`
-	DSN   string `envconfig:"DSN" default:"postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"`
+	Debug          bool   `envconfig:"DEBUG" default:"false"`
+	Node           string `envconfig:"NODE" default:"http://localhost:8000"`
+	DSN            string `envconfig:"DSN" default:"postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"`
+	InternalApiKey string `envconfig:"INTERNAL_API_KEY" default:"secret"`
 }
 
 func workerTask(ctx context.Context) *cli.Command {
@@ -170,9 +171,10 @@ func runWorker(ctx context.Context, logger zerolog.Logger, cfg workerConfig) err
 	}
 	defer db.Close()
 	wc := worker.WorkerConfig{
-		Log:  logger,
-		Node: cfg.Node,
-		DB:   db,
+		Log:    logger,
+		Node:   cfg.Node,
+		DB:     db,
+		ApiKey: cfg.InternalApiKey,
 	}
 
 	w, err := worker.NewWorker(wc)
