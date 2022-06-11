@@ -48,10 +48,12 @@ func New(cfg DbConfig) (*DB, error) {
 	sqldb.SetMaxIdleConns(cfg.MaxOpenConns)
 
 	db := bun.NewDB(sqldb, pgdialect.New())
-	db.AddQueryHook(bundebug.NewQueryHook(
-		bundebug.WithVerbose(true),
-		bundebug.FromEnv("BUNDEBUG"),
-	))
+	if cfg.Debug {
+		db.AddQueryHook(bundebug.NewQueryHook(
+			bundebug.WithVerbose(true),
+			bundebug.FromEnv("BUNDEBUG"),
+		))
+	}
 	ans := DB{
 		DB:    db,
 		sqldb: sqldb,

@@ -6,17 +6,17 @@ default: help
 help: ## help information about make commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-.PHONY: rest
-rest: ## rest starts the webserver
-	go run cmd/server/main.go
+.PHONY: server
+server: ## server starts the webserver
+	go run cmd/hermeshooks/main.go server
 
 .PHONY: worker
 worker: ## worker starts a worker
-	go run cmd/worker/main.go
+	go run cmd/hermeshooks/main.go worker
 
 .PHONY: fixtures
 fixtures: ## fixtures inserts some dummy jobs
-	go run cmd/fixtures/main.go
+	go run cmd/hermeshooks/main.go fixtures
 
 .PHONY: migrate
 migrate: ## migrate 
