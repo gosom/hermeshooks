@@ -70,10 +70,10 @@ func (e executor) process(ctx context.Context, job entities.ScheduledJob) error 
 	job.UpdatedAt = time.Now().UTC()
 	var msg string
 	if err != nil {
-		job.Status = entities.Success
+		job.Status = entities.Fail
 		msg = err.Error()
 	} else {
-		job.Status = entities.Fail
+		job.Status = entities.Success
 	}
 	execution := entities.Execution{
 		ScheduledJobID: job.ID,
