@@ -101,5 +101,9 @@ func wh(w http.ResponseWriter, req *http.Request) {
 		panic(err)
 	}
 
+	for k, v := range req.Header {
+		fmt.Println(k, v[0]) // print the headers
+	}
+
 	fmt.Println(p["msg"]) // it should print hi there
 }

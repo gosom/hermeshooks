@@ -35,6 +35,10 @@ The important here is that you do not need to do anything extra apart from that.
 
 ### via rapidAPI
 
+<a href="https://rapidapi.com/YOUR_USERNAME/api/YOUR_API" target="_blank">
+    <img src="https://storage.googleapis.com/rapidapi-documentation/connect-on-rapidapi-light.png" width="215" alt="Connect on RapidAPI">
+</a>
+
 Make an account to rapidAPI and use the Free tier to try it out
 
 
