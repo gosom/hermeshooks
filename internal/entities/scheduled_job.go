@@ -38,6 +38,7 @@ func (s ScheduledJobStatus) String() string {
 type ScheduledJob struct {
 	ID          int64
 	UID         uuid.UUID
+	UserID      int64
 	Name        string
 	Description string
 	Url         string

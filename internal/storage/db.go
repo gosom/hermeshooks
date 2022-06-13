@@ -13,6 +13,7 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 	"github.com/uptrace/bun/extra/bundebug"
 
+	"github.com/gosom/hermeshooks/internal/cryptoutils"
 	"github.com/gosom/hermeshooks/internal/entities"
 )
 
@@ -31,7 +32,6 @@ type DB struct {
 }
 
 func New(cfg DbConfig) (*DB, error) {
-
 	var sqldb *sql.DB
 	if cfg.PgDriver {
 		sqldb = sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(cfg.DSN)))
@@ -357,6 +357,18 @@ func UserExists(ctx context.Context, db IDB, username string) (bool, error) {
 		Model((*User)(nil)).Where("username = ?", username).
 		Exists(ctx)
 	return exists, err
+}
+
+func GetUserByApiKey(ctx context.Context, db IDB, apiKey string) (entities.User, error) {
+	h := cryptoutils.Sha256(apiKey)
+	var u User
+	if err := db.NewSelect().
+		Model(&u).
+		Where("api_key = ?", h).
+		Scan(ctx); err != nil {
+		return entities.User{}, err
+	}
+	return ToEntitiesUser(u), nil
 }
 
 func GetUserByUserName(ctx context.Context, db IDB, username string) (entities.User, error) {

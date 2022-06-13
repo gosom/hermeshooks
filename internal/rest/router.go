@@ -5,13 +5,15 @@ import (
 	"crypto/ecdsa"
 	"time"
 
-	"github.com/gosom/hermeshooks/internal/entities"
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bunrouter"
+
+	"github.com/gosom/hermeshooks/internal/entities"
 )
 
 type AuthService interface {
-	RapidApi(next bunrouter.HandlerFunc) bunrouter.HandlerFunc
+	Signup(ctx context.Context, username string) (string, error)
+	AuthMiddleware(next bunrouter.HandlerFunc) bunrouter.HandlerFunc
 	InternalApi(next bunrouter.HandlerFunc) bunrouter.HandlerFunc
 }
 
@@ -52,6 +54,15 @@ func NewRouter(cfg RouterConfig) *bunrouter.Router {
 		}
 		g.GET("/health", healthHandler.Get)
 
+		g.WithGroup("/users", func(group *bunrouter.Group) {
+			group = group.Use(cfg.AuthSrv.InternalApi)
+			userHandler := UserHandler{
+				log: cfg.Log,
+				srv: cfg.AuthSrv,
+			}
+			group.POST("", userHandler.Create)
+		})
+
 		g.WithGroup("/workers", func(group *bunrouter.Group) {
 			group = group.Use(cfg.AuthSrv.InternalApi)
 			workerHandler := WorkerHandler{
@@ -71,7 +82,7 @@ func NewRouter(cfg RouterConfig) *bunrouter.Router {
 		})
 
 		g.WithGroup("/scheduledJobs", func(group *bunrouter.Group) {
-			group = group.Use(cfg.AuthSrv.RapidApi)
+			group = group.Use(cfg.AuthSrv.AuthMiddleware)
 			scheduledJobsHandler := ScheduledJobsHandler{
 				log: cfg.Log,
 				srv: cfg.ScheduledJobSrv,

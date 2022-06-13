@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bunrouter"
 
+	"github.com/gosom/hermeshooks/internal/common"
 	"github.com/gosom/hermeshooks/internal/entities"
 )
 
@@ -110,7 +111,12 @@ func (h *ScheduledJobsHandler) Create(w http.ResponseWriter, r bunrouter.Request
 		return err
 	}
 	job := ToScheduledJob(p)
-	job, err := h.srv.Schedule(r.Context(), job)
+	currentUser, err := common.GetCurrentUser(r)
+	if err != nil {
+		return err
+	}
+	job.UserID = currentUser.ID
+	job, err = h.srv.Schedule(r.Context(), job)
 	if err != nil {
 		return err
 	}

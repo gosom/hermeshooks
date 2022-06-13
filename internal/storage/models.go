@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gosom/hermeshooks/internal/cryptoutils"
 	"github.com/gosom/hermeshooks/internal/entities"
 	"github.com/uptrace/bun"
 )
@@ -13,6 +14,7 @@ type ScheduledJob struct {
 
 	ID          int64 `bun:"id,pk,autoincrement"`
 	UID         uuid.UUID
+	UserID      int64
 	Name        string
 	Description string
 	Url         string
@@ -32,6 +34,7 @@ func FromScheduledJobEntity(j entities.ScheduledJob) ScheduledJob {
 		ID:          j.ID,
 		UID:         j.UID,
 		Name:        j.Name,
+		UserID:      j.UserID,
 		Description: j.Description,
 		Url:         j.Url,
 		Payload:     j.Payload,
@@ -52,6 +55,7 @@ func ToScheduledJobEntity(j ScheduledJob) entities.ScheduledJob {
 		ID:          j.ID,
 		UID:         j.UID,
 		Name:        j.Name,
+		UserID:      j.UserID,
 		Description: j.Description,
 		Url:         j.Url,
 		Payload:     j.Payload,
@@ -101,16 +105,31 @@ func ToEntitiesExecution(e Execution) entities.Execution {
 
 type User struct {
 	bun.BaseModel
-	entities.User
+
+	ID        int64
+	Username  string
+	ApiKey    *string
+	CreatedAt time.Time
 }
 
 func FromEntitiesUser(u entities.User) User {
 	ans := User{
-		User: u,
+		ID:        u.ID,
+		Username:  u.Username,
+		CreatedAt: u.CreatedAt,
+	}
+	if len(u.ApiKey) > 0 {
+		apiKey := cryptoutils.Sha256(u.ApiKey)
+		ans.ApiKey = &apiKey
 	}
 	return ans
 }
 
 func ToEntitiesUser(u User) entities.User {
-	return u.User
+	ans := entities.User{
+		ID:        u.ID,
+		Username:  u.Username,
+		CreatedAt: u.CreatedAt,
+	}
+	return ans
 }

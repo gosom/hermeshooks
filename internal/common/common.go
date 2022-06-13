@@ -3,16 +3,27 @@ package common
 import (
 	"bytes"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/gosom/hermeshooks/internal/entities"
 	"github.com/rs/zerolog"
+	"github.com/uptrace/bunrouter"
 )
 
 var UserCtxKey struct{}
+
+func GetCurrentUser(req bunrouter.Request) (entities.User, error) {
+	u, ok := req.Context().Value(UserCtxKey).(entities.User)
+	if !ok {
+		return u, errors.New("no user")
+	}
+	return u, nil
+}
 
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
