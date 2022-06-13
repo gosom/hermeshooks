@@ -13,31 +13,45 @@ services:
     volumes: 
       - db:/var/lib/postgresql/data
     restart: "unless-stopped"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 30s
+      retries: 5
+  migrate:
+    image: gosom/tern
+    volumes:
+      - ./migrations:/migrations
+    environment:
+      - PGHOST=db
+      - PGUSER=postgres
+      - PGPASSWORD=postgres
+      - PGDATABASE=postgres
+    command: ["migrate", "--migrations", "/migrations"]
+    healthcheck:
+      test: "exit 0"
+    depends_on:
+      db:
+        condition: service_healthy
   server:
-    build: 
-      context: .
+    image: gosom/hermeshooks
     command: "hermeshooks server"
     ports:
-      - "443:443"
-      - "80:80"
-    expose:
-      - 443
-      - 80
+      - "127.0.0.1:8000:8000"
     environment:
       - ADDR=:8000
       - DSN=postgres://postgres:postgres@db:5432/postgres?sslmode=disable
       - DEBUG=true
-      - DOMAIN=scheduler.gkomninos.com
     depends_on:
-      - "db"
+      db:
+        condition: service_healthy
     restart: "unless-stopped"
   worker:
-    build: 
-      context: .
+    image: gosom/hermeshooks
     command: "hermeshooks worker"
     environment:
       - DEBUG=true
-      - NODE=https://schedulere.gkomninos.com
+      - NODE=http://server:8000
       - DSN=postgres://postgres:postgres@db:5432/postgres?sslmode=disable
     depends_on:
       - "server"
