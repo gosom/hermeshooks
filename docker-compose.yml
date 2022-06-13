@@ -18,13 +18,16 @@ services:
       context: .
     command: "hermeshooks server"
     ports:
-      - "8000:8000"
+      - "443:443"
+      - "80:80"
     expose:
-      - 8000
+      - 443
+      - 80
     environment:
       - ADDR=:8000
       - DSN=postgres://postgres:postgres@db:5432/postgres?sslmode=disable
       - DEBUG=true
+      - DOMAIN=scheduler.gkomninos.com
     depends_on:
       - "db"
     restart: "unless-stopped"
@@ -34,7 +37,7 @@ services:
     command: "hermeshooks worker"
     environment:
       - DEBUG=true
-      - NODE=http://server:8000
+      - NODE=https://schedulere.gkomninos.com
       - DSN=postgres://postgres:postgres@db:5432/postgres?sslmode=disable
     depends_on:
       - "server"

@@ -49,6 +49,7 @@ type serverConfig struct {
 	DSN            string `envconfig:"DSN" default:"postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"`
 	RapidApiKey    string `envconfig:"RAPID_API_KEY" default:"secret"`
 	InternalApiKey string `envconfig:"INTERNAL_API_KEY" default:"secret"`
+	Domain         string `envconfig:"DOMAIN" default:""`
 }
 
 func serverTask(ctx context.Context) *cli.Command {
@@ -121,6 +122,7 @@ func runServer(ctx context.Context, logger zerolog.Logger, cfg serverConfig) err
 		Addr:    cfg.Addr,
 		Log:     logger,
 		Handler: router,
+		Domain:  cfg.Domain,
 	}
 	// -------------------------------------------------------------------
 	rest, err := rest.New(srvConfig)
