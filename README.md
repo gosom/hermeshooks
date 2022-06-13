@@ -35,7 +35,7 @@ The important here is that you do not need to do anything extra apart from that.
 
 ### via rapidAPI
 
-<a href="zendrom-ltd-zendrom-ltd-default/api/hermeshooks/" target="_blank">
+<a href="https://rapidapi.com/zendrom-ltd-zendrom-ltd-default/api/hermeshooks/" target="_blank">
     <img src="https://storage.googleapis.com/rapidapi-documentation/connect-on-rapidapi-light.png" width="215" alt="Connect on RapidAPI">
 </a>
 
