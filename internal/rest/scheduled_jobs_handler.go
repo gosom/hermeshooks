@@ -68,6 +68,11 @@ func (s ScheduledJobsPayload) Validate() error {
 		msg := fmt.Sprintf("RunAt must be at least 3 minutes from now")
 		return ValidationError{msg}
 	}
+	future := time.Now().UTC().Add(24 * time.Hour * 30)
+	if s.RunAt.UTC().After(future) {
+		msg := fmt.Sprintf("RunAt must be at most 30 days from now")
+		return ValidationError{msg}
+	}
 	if s.Retries > 3 {
 		return ValidationError{
 			"retries can be at most 3",
