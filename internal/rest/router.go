@@ -18,6 +18,7 @@ type AuthService interface {
 }
 
 type ScheduledJobService interface {
+	Get(ctx context.Context, u entities.User, uid string) (entities.ScheduledJob, []entities.Execution, error)
 	Schedule(ctx context.Context, job entities.ScheduledJob) (entities.ScheduledJob, error)
 }
 
@@ -87,6 +88,7 @@ func NewRouter(cfg RouterConfig) *bunrouter.Router {
 				log: cfg.Log,
 				srv: cfg.ScheduledJobSrv,
 			}
+			group.GET("/:uuid", scheduledJobsHandler.Get)
 			group.POST("", scheduledJobsHandler.Create)
 		})
 

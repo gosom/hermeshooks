@@ -123,3 +123,58 @@ func (h *ScheduledJobsHandler) Create(w http.ResponseWriter, r bunrouter.Request
 	resp := ScheduledJobResponse{job.UID.String()}
 	return JSON(w, http.StatusCreated, resp)
 }
+
+type ScheduledJobGetResponse struct {
+	UID         uuid.UUID           `json:"uid"`
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	Url         string              `json:"url"`
+	RunAt       time.Time           `json:"runAt"`
+	Status      string              `json:"status"`
+	Executions  []ExecutionResponse `json:"executions"`
+}
+
+type ExecutionResponse struct {
+	StatusCode int       `json:"statusCode"`
+	Msg        string    `json:"msg"`
+	ExecutedAt time.Time `json:"executedAt"`
+}
+
+func (h *ScheduledJobsHandler) Get(w http.ResponseWriter, r bunrouter.Request) error {
+	uid := r.Param("uuid")
+	if len(uid) == 0 {
+		return ValidationError{"uuid is missing"}
+	}
+	id, err := uuid.Parse(uid)
+	if err != nil {
+		return ValidationError{"not a valid uuid"}
+	}
+	currentUser, err := common.GetCurrentUser(r)
+	if err != nil {
+		return err
+	}
+	job, executions, err := h.srv.Get(r.Context(), currentUser, id.String())
+	if err != nil {
+		return ErrNotFound
+	}
+	ans := ScheduledJobGetResponse{
+		UID:         job.UID,
+		Name:        job.Name,
+		Description: job.Description,
+		Url:         job.Url,
+		RunAt:       job.RunAt,
+		Status:      job.Status.String(),
+		Executions:  []ExecutionResponse{},
+	}
+	for i := range executions {
+		ans.Executions = append(ans.Executions,
+			ExecutionResponse{
+				StatusCode: executions[i].StatusCode,
+				Msg:        executions[i].Msg,
+				ExecutedAt: executions[i].CreatedAt,
+			},
+		)
+	}
+
+	return JSON(w, http.StatusOK, ans)
+}

@@ -171,6 +171,18 @@ func InsertScheduledJob(ctx context.Context, db IDB, job entities.ScheduledJob) 
 	return job, err
 }
 
+func GetScheduledJob(ctx context.Context, db IDB, id string, userId int64) (entities.ScheduledJob, error) {
+	var j ScheduledJob
+	if err := db.NewSelect().
+		Model(&j).
+		Where("uid = ?", id).
+		Where("user_id = ?", userId).
+		Scan(ctx); err != nil {
+		return entities.ScheduledJob{}, err
+	}
+	return ToScheduledJobEntity(j), nil
+}
+
 func UpdateScheduledJobsPartitions(ctx context.Context, db IDB, job entities.ScheduledJob) error {
 	j := FromScheduledJobEntity(job)
 	_, err := db.NewUpdate().Model(&j).Column("partition").
@@ -323,6 +335,22 @@ func UpdateJobStatus(ctx context.Context, db IDB, job entities.ScheduledJob) err
 		Where("id = ?", j.ID).
 		Exec(ctx)
 	return err
+}
+
+func SelectExecutions(ctx context.Context, db IDB, jobID int64) ([]entities.Execution, error) {
+	var items []Execution
+	if err := db.NewSelect().
+		Model(&items).
+		Where("scheduled_job_id = ?", jobID).
+		Order("created_at desc").
+		Scan(ctx); err != nil {
+		return nil, err
+	}
+	ans := make([]entities.Execution, len(items), len(items))
+	for i := range items {
+		ans[i] = ToEntitiesExecution(items[i])
+	}
+	return ans, nil
 }
 
 func InsertExecution(ctx context.Context, db IDB, job entities.Execution) (entities.Execution, error) {

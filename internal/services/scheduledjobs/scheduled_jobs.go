@@ -42,3 +42,19 @@ func (s *Service) Schedule(ctx context.Context, job entities.ScheduledJob) (enti
 	job.Partition = s.partitioner.Pick()
 	return storage.InsertScheduledJob(ctx, s.db, job)
 }
+func (s *Service) Get(ctx context.Context, u entities.User, uid string) (entities.ScheduledJob, []entities.Execution, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return entities.ScheduledJob{}, nil, err
+	}
+	job, err := storage.GetScheduledJob(ctx, tx, uid, u.ID)
+	if err != nil {
+		return entities.ScheduledJob{}, nil, err
+	}
+	defer tx.Rollback()
+	executions, err := storage.SelectExecutions(ctx, tx, job.ID)
+	if err != nil {
+		return job, nil, err
+	}
+	return job, executions, tx.Commit()
+}
